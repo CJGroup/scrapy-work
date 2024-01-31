@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "scrapy-work"
+version = "0.1.0"
+description = ""
+authors = ["ConstasJ <constasj@qq.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.31.0"
+beautifulsoup4 = "^4.12.3"
+
+
+[[tool.poetry.source]]
+name = "mirrors"
+url = "https://mirrors.cernet.edu.cn/pypi/web/simple/"
+priority = "primary"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
