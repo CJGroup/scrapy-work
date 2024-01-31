@@ -1,10 +1,14 @@
 import json
+import os.path
+
 from requests import get
 from bs4 import BeautifulSoup
 
 
 def dump_to_file(obje):
-    json.dump(obje, open("bs.json", "w"), ensure_ascii=False, indent=4)
+    if not os.path.exists("data"):
+        os.mkdir("data")
+    json.dump(obje, open("data/bs.json", "w"), ensure_ascii=False, indent=4)
 
 
 def main():
