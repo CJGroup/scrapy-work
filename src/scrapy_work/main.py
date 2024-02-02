@@ -1,8 +1,9 @@
 import json
 import os.path
 import asyncio
+import aiohttp
+from concurrent.futures import ProcessPoolExecutor
 
-from requests import get
 from bs4 import BeautifulSoup
 
 from scrapy_work.definition import get_character_definition
@@ -16,37 +17,52 @@ def dump_to_file(obje):
 
 
 # 获取部首下的所有汉字
-async def get_characters(bs):
-    url = "https://www.zdic.net/zd/bs/bs?bs=" + bs
-    soup = BeautifulSoup(get(url).text, "lxml")
+async def get_characters(bs, semaphere):
+    print(f"bs:{bs}")
+    url = f"https://www.zdic.net/zd/bs/bs?bs={bs}"
     characters = {}
-    print(bs)
-    for a in soup.find_all("a"):
-        if 'href' in a.attrs and a['href'].startswith("/hans/"):
-            character = a.text if a.text else a['href'].split("/")[-1]
-            url = a['href']
-            characters[character] = character
+    async with semaphere:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                text = await response.text()
+                soup = BeautifulSoup(text, "lxml")
+                tasks = []
+                for a in soup.find_all("a"):
+                    if 'href' in a.attrs and a['href'].startswith("/hans/"):
+                        print("hz:" + a.text if a.text else a['href'].split("/")[-1])
+                        tasks.append(get_character_definition(a['href'], semaphere))
+                results = await asyncio.gather(*tasks)
+                for i, a in enumerate(soup.find_all("a")):
+                    if 'href' in a.attrs and a['href'].startswith("/hans/"):
+                        character = a.text if a.text else a['href'].split("/")[-1]
+                        characters[character] = results[i]
+    return characters
+
+
+def process_bs(bs):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    characters = loop.run_until_complete(get_characters(bs, asyncio.Semaphore(64)))
+    loop.close()
     return characters
 
 
 # 主函数
-def main():
+async def main():
+    loop = asyncio.get_running_loop()
+    semaphere = asyncio.Semaphore(64)
     url = "https://www.zdic.net/zd/bs/"
-    loop = asyncio.get_event_loop()
-    html = get(url).text
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            html = await response.text()
     soup = BeautifulSoup(html, "lxml")
     tables = soup.find("div", class_="nr-box").find_all("table")
     bs_dict = {table.find(class_="bsyx").text: {pck.text: '' for pck in table.find_all(class_="pck")} for table in
                tables}
-    bsul_tasks = []
-    for bsyx, pck_dict in bs_dict.items():
-        pck_tasks = []
-        for pck in pck_dict:
-            pck_tasks.append(get_characters(pck))
-        bsul_tasks.append(asyncio.gather(*pck_tasks))
-    bsul_results = loop.run_until_complete(asyncio.gather(*bsul_tasks))
+    bs_list = [pck for pck_dict in bs_dict.values() for pck in pck_dict]
+    with ProcessPoolExecutor() as pool:
+        bsul_results = pool.map(process_bs, bs_list)
     for i, bsul_result in enumerate(bsul_results):
         for j, characters in enumerate(bsul_result):
             bs_dict[list(bs_dict.keys())[i]][list(bs_dict[list(bs_dict.keys())[i]].keys())[j]] = characters
-
     dump_to_file(bs_dict)
