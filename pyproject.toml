@@ -13,6 +13,7 @@ beautifulsoup4 = "^4.12.3"
 lxml = "^5.1.0"
 setuptools = "^69.0.3"
 aiohttp = "^3.9.3"
+aiologger = "^0.7.0"
 
 
 [[tool.poetry.source]]

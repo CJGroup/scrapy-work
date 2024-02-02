@@ -1,10 +1,14 @@
 import json
+import logging
 import os.path
 import asyncio
+from logging import getLogger
+
 import aiohttp
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 from bs4 import BeautifulSoup
+from aiologger import Logger
 
 from scrapy_work.definition import get_character_definition
 
@@ -18,7 +22,13 @@ def dump_to_file(obje):
 
 # 获取部首下的所有汉字
 async def get_characters(bs, semaphere):
-    print(f"bs:{bs}")
+    logger = getLogger("bs-proc")
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        handlers=[
+                            logging.FileHandler("bs-proc.log", encoding="utf-8"),
+                            logging.StreamHandler()])
+    logger.info(f"start to get characters of bs: {bs}")
     url = f"https://www.zdic.net/zd/bs/bs?bs={bs}"
     characters = {}
     async with semaphere:
@@ -29,7 +39,7 @@ async def get_characters(bs, semaphere):
                 tasks = []
                 for a in soup.find_all("a"):
                     if 'href' in a.attrs and a['href'].startswith("/hans/"):
-                        print("hz:" + a.text if a.text else a['href'].split("/")[-1])
+                        logger.info(f"start to get character definition: {a.text if a.text else a['href'].split('/')[-1]}")
                         tasks.append(get_character_definition(a['href'], semaphere))
                 results = await asyncio.gather(*tasks)
                 for i, a in enumerate(soup.find_all("a")):
@@ -43,6 +53,12 @@ def process_bs(bs):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     characters = loop.run_until_complete(get_characters(bs, asyncio.Semaphore(64)))
+    tasks = asyncio.all_tasks(loop)
+    for task in tasks:
+        try:
+            task.cancel()
+        except asyncio.CancelledError:
+            pass
     loop.close()
     return characters
 
@@ -60,7 +76,7 @@ async def main():
     bs_dict = {table.find(class_="bsyx").text: {pck.text: '' for pck in table.find_all(class_="pck")} for table in
                tables}
     bs_list = [pck for pck_dict in bs_dict.values() for pck in pck_dict]
-    with ProcessPoolExecutor() as pool:
+    with ThreadPoolExecutor(max_workers=20) as pool:
         bsul_results = pool.map(process_bs, bs_list)
     for i, bsul_result in enumerate(bsul_results):
         for j, characters in enumerate(bsul_result):
